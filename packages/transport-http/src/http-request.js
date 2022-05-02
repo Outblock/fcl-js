@@ -5,16 +5,15 @@ class HTTPRequestError extends Error {
   constructor({transport, error, hostname, path, port, method, requestBody, responseBody, responseStatusText, reqOn}) {
     const msg = `
       HTTP Request Error: An error occurred when interacting with the Access API.
-      transport=${transport}
-      error=${error}
-      hostname=${hostname}
-      path=${path}
-      port=${port}
-      method=${method}
-      requestBody=${JSON.stringify(requestBody)}
-      responseBody=${responseBody}
-      responseStatusText=${responseStatusText}
-      reqOn=${reqOn}
+      ${transport ? `transport=${transport}` : ""}
+      ${error ? `error=${error}` : ""}
+      ${hostname ? `hostname=${hostname}` : ""}
+      ${path ? `path=${path}` : ""}
+      ${method ? `method=${method}` : ""}
+      ${requestBody ? `requestBody=${JSON.stringify(requestBody)}` : ""}
+      ${responseBody ? `responseBody=${responseBody}` : ""}
+      ${responseStatusText ? `responseStatusText=${responseStatusText}` : ""}
+      ${reqOn ? `reqOn=${reqOn}` : ""}
     `
     super(msg)
     this.name = "HTTP Request Error"
@@ -55,31 +54,34 @@ export async function httpRequest({
   invariant((fetchTransport || nodeHttpsTransport || nodeHttpTransport), "HTTP Request error: Could not find a supported HTTP module.")
 
   if (fetchTransport) {
-
-    return await fetchTransport(
+    return fetchTransport(
       `${hostname}${path}`,
       {
         method: method,
         body: body ? JSON.stringify(body) : undefined,
       }
-    ).then(res => {
+    ).then(async res => {
       if (res.ok) {
         return res.json()
       }
+      const responseJSON = JSON.stringify(await res.json())
       throw new HTTPRequestError({
         transport: "FetchTransport",
-        error: e,
+        error: responseJSON?.message,
         hostname,
         path,
         method,
         requestBody: body,
-        responseBody: res.json(),
+        responseBody: responseJSON,
         responseStatusText: res.statusText
       })
     }).catch(e => {
+      if (e instanceof HTTPRequestError) {
+        throw e
+      }
       throw new HTTPRequestError({
         transport: "FetchTransport",
-        error: e,
+        error: e?.message,
         hostname,
         path,
         method,
@@ -121,25 +123,41 @@ export async function httpRequest({
         res.on("end", () => {
           try {
             responseBody = JSON.parse(responseBody.join(""))
+            if (res?.statusCode
+              && (Number(res?.statusCode) < 200 || Number(res?.statusCode) >= 300)
+            ) {
+              throw new HTTPRequestError({
+                transport: isHTTPs ? "NodeHTTPsTransport" : "NodeHTTPTransport",
+                error: JSON.stringify(responseBody),
+                hostname: parsedHostname,
+                path,
+                port,
+                method,
+                requestBody: body ? JSON.stringify(body) : null,
+                responseBody: JSON.stringify(responseBody),
+                reqOn: "end",
+              })
+            }
           } catch(e) {
-            reject(new HTTPRequestError({
+            if (e instanceof HTTPRequestError) {
+              throw e
+            }
+            throw new HTTPRequestError({
               transport: isHTTPs ? "NodeHTTPsTransport" : "NodeHTTPTransport",
               error: e,
               hostname: parsedHostname,
               path,
               port,
               method,
-              requestBody: body,
-              responseBody,
               reqOn: "end",
-            }))
+            })
           }
           resolve(responseBody)
         })
       })
 
       req.on("error", e => {
-        reject(new HTTPRequestError({
+        throw new HTTPRequestError({
           transport: isHTTPs ? "NodeHTTPsTransport" : "NodeHTTPTransport",
           error: e,
           hostname: parsedHostname,
@@ -149,7 +167,7 @@ export async function httpRequest({
           requestBody: body,
           responseBody,
           reqOn: "error",
-        }))
+        })
       })
       
       if (body) req.write(bodyString)
