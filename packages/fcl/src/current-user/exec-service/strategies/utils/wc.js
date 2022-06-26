@@ -14,38 +14,50 @@ const checkPersistedState = async client => {
   if (typeof client === "undefined") {
     throw new Error("WalletConnect is not initialized")
   }
-  if (client.pairing.topics.length) {
-    pairings = client.pairing.values
-  }
-  if (client.session?.topics.length) {
-    storedSession = await client.session.get(client.session.topics[0])
+  // if (client.pairing.topics.length) {
+  //   pairings = client.pairing.values
+  // }
+  console.log("client.session ->", client.session)
+  if (client.session && client.session.values.length > 0) {
+    // storedSession = await client.session.get(client.session.values[0].topic)
+    storedSession = await client.session.get(client.session.values[0].topic)
   }
   return {pairings, storedSession}
 }
 
-const connectWc = async client => {
+
+const connectWc = async (client, QRCodeModal) => {
   try {
-    const session = await client.connect({
+    console.log('client, QRCodeModal ->', client, QRCodeModal)
+    const { uri, approval } = await client.connect({
       metadata: DEFAULT_APP_METADATA,
-      //pairing: client.pairing.topics.length ? client.pairing.topics[0] : null,
-      permissions: {
-        blockchain: {
+      requiredNamespaces: {
+        flow: {
+          methods: ["flow_signMessage", "flow_authz", "flow_authn"],
           chains: ["flow:testnet"],
-        },
-        jsonrpc: {
-          methods: ["flow_authn", "flow_authz", "flow_signMessage"],
+          events: ["chainChanged", "accountsChanged"]
         },
       },
     })
+
+    if (uri) {
+      QRCodeModal.open(uri, () => {
+        console.log("EVENT", "QR Code Modal closed")
+      })
+    }
+
+    const session = await approval();
     return session
   } catch (e) {
     console.error(e)
+  } finally {
+    QRCodeModal.close()
   }
 }
 
 export async function wc(service, body, opts = {}) {
   if (service == null) return {send: noop, close: noop}
-
+  console.log('wc 11-->', service)
   const onReady = opts.onReady || noop
   const onResponse = opts.onResponse || noop
   const onClose = opts.onClose || noop
@@ -71,14 +83,18 @@ export async function wc(service, body, opts = {}) {
   // if pairings === true, need user input, openPairingModal() to select?
   let session = storedSession
   if (session == null) {
-    session = await connectWc(client)
+    session = await connectWc(client, QRCodeModal)
   }
+
+  console.log("service ->", service)
 
   if (service.endpoint === "flow_authn") {
     try {
-      console.log("<--- handle Authn -->", service.endpoint)
+      console.log('{client, QRCodeModal}  ->', client, QRCodeModal)
+      console.log("<--- handle Authn 11 -->", service.endpoint)
       const result = await client.request({
         topic: session.topic,
+        chainId: "flow:testnet",
         request: {
           method: service.endpoint,
           params: [],
@@ -87,6 +103,7 @@ export async function wc(service, body, opts = {}) {
       onResponse(result, {
         close: () => QRCodeModal.close(),
       })
+      console.log(' handle Authn client ->', result)
     } catch (e) {
       console.error(e)
     }
@@ -94,18 +111,20 @@ export async function wc(service, body, opts = {}) {
 
   if (service.endpoint === "flow_authz") {
     try {
-      console.log("<--- handle Authz -->")
+      console.log("<--- handle Authz -->", service, body)
       const result = await client.request({
         topic: session.topic,
+        chainId: "flow:testnet",
         request: {
           method: service.endpoint,
-          params: [body],
+          params: JSON.stringify(body),
         },
       })
 
       onResponse(result, {
         close: () => QRCodeModal.close(),
       })
+      console.log(' handle Authz ->', result)
     } catch (e) {
       console.error(e)
     }
