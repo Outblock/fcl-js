@@ -1,5 +1,14 @@
 # @onflow/fcl
 
+## 1.3.2
+
+### Patch Changes
+
+- [#1368](https://github.com/onflow/fcl-js/pull/1368) [`4bf01436`](https://github.com/onflow/fcl-js/commit/4bf014362fdd043e04a16d7305e8ed78ffd89d6b) Thanks [@sanyu1225](https://github.com/sanyu1225)! - make sure iframe background is translucent
+
+- Updated dependencies [[`7bdfa016`](https://github.com/onflow/fcl-js/commit/7bdfa016823d1caac23143351940b42f65d4d1c4)]:
+  - @onflow/config@1.0.5
+
 ## 1.3.1
 
 ### Patch Changes
